@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+.wrangler/
+node_modules/
+output/
+.env
+.DS_Store
+*.log

@@ -1,0 +1,2 @@
+[console_scripts]
+shanghai-crawler = shanghai_policy_crawler.crawler:main

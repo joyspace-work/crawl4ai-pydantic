@@ -1,0 +1,12 @@
+{
+  "name": "shanghai-gov-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250212.0",
+    "wrangler": "^3.100.0"
+  }
+}
