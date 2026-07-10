@@ -1,8 +1,10 @@
 {
-  "name": "shanghai-gov-proxy",
+  "name": "@joyspace/policy-schemas",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "main": "./crawler.ts",
+  "types": "./crawler.ts",
   "scripts": {
     "deploy": "wrangler deploy",
     "sync-schemas": "uv run python src/shanghai_policy_crawler/export_schema.py && node scripts/gen-schemas.js"
