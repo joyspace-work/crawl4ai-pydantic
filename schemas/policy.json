@@ -1,0 +1,100 @@
+{
+  "description": "政策文件（上海市政府政策）",
+  "properties": {
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Url"
+    },
+    "policy_id": {
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "project_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Project Ids",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "region": {
+      "title": "Region",
+      "type": "string"
+    },
+    "document_number": {
+      "title": "Document Number",
+      "type": "string"
+    },
+    "agency": {
+      "title": "Agency",
+      "type": "string"
+    },
+    "publish_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Date"
+    },
+    "expire_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expire Date"
+    },
+    "content": {
+      "title": "Content",
+      "type": "string"
+    },
+    "pdf_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pdf Url"
+    },
+    "raw_detail": {
+      "additionalProperties": true,
+      "title": "Raw Detail",
+      "type": "object"
+    }
+  },
+  "required": [
+    "url",
+    "policy_id",
+    "title",
+    "region",
+    "document_number",
+    "agency",
+    "content",
+    "raw_detail"
+  ],
+  "title": "PolicyItem",
+  "type": "object"
+}

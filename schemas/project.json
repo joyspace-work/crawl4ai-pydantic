@@ -1,0 +1,126 @@
+{
+  "description": "申报项目（上海市企业创新港政策申报项目）",
+  "properties": {
+    "url": {
+      "title": "Url",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "policy_id": {
+      "title": "Policy Id",
+      "type": "string"
+    },
+    "policy_basis": {
+      "title": "Policy Basis",
+      "type": "string"
+    },
+    "policy_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Policy Ids",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "region": {
+      "title": "Region",
+      "type": "string"
+    },
+    "agency": {
+      "title": "Agency",
+      "type": "string"
+    },
+    "recipient": {
+      "title": "Recipient",
+      "type": "string"
+    },
+    "start_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start Date"
+    },
+    "end_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Date"
+    },
+    "content": {
+      "title": "Content",
+      "type": "string"
+    },
+    "policy_object": {
+      "title": "Policy Object",
+      "type": "string"
+    },
+    "condition_text": {
+      "title": "Condition Text",
+      "type": "string"
+    },
+    "support_text": {
+      "title": "Support Text",
+      "type": "string"
+    },
+    "material_text": {
+      "title": "Material Text",
+      "type": "string"
+    },
+    "contact_information": {
+      "title": "Contact Information",
+      "type": "string"
+    },
+    "apply_method": {
+      "title": "Apply Method",
+      "type": "string"
+    },
+    "crawled_at": {
+      "title": "Crawled At",
+      "type": "string"
+    },
+    "raw_detail": {
+      "additionalProperties": true,
+      "title": "Raw Detail",
+      "type": "object"
+    }
+  },
+  "required": [
+    "url",
+    "project_id",
+    "policy_id",
+    "policy_basis",
+    "title",
+    "region",
+    "agency",
+    "recipient",
+    "content",
+    "policy_object",
+    "condition_text",
+    "support_text",
+    "material_text",
+    "contact_information",
+    "apply_method",
+    "crawled_at",
+    "raw_detail"
+  ],
+  "title": "ProjectItem",
+  "type": "object"
+}

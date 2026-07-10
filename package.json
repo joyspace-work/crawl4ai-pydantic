@@ -2,11 +2,14 @@
   "name": "shanghai-gov-proxy",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "sync-schemas": "uv run python src/shanghai_policy_crawler/export_schema.py && node scripts/gen-schemas.js"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250212.0",
+    "json-schema-to-zod": "^2.8.1",
     "wrangler": "^3.100.0"
   }
 }
