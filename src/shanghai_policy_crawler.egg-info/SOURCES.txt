@@ -1,10 +1,12 @@
-README.md
 pyproject.toml
 src/shanghai_policy_crawler/__init__.py
 src/shanghai_policy_crawler/__main__.py
 src/shanghai_policy_crawler/categories.py
-src/shanghai_policy_crawler/crawler.py
-src/shanghai_policy_crawler/firecrawl_crawler.py
+src/shanghai_policy_crawler/crawl4ai_crawler.py
+src/shanghai_policy_crawler/crawlers.py
+src/shanghai_policy_crawler/llm_utils.py
+src/shanghai_policy_crawler/models.py
+src/shanghai_policy_crawler/normalize.py
 src/shanghai_policy_crawler/shanghai_gov_api.py
 src/shanghai_policy_crawler/utils.py
 src/shanghai_policy_crawler.egg-info/PKG-INFO
@@ -13,6 +15,3 @@ src/shanghai_policy_crawler.egg-info/dependency_links.txt
 src/shanghai_policy_crawler.egg-info/entry_points.txt
 src/shanghai_policy_crawler.egg-info/requires.txt
 src/shanghai_policy_crawler.egg-info/top_level.txt
-src/shanghai_policy_crawler/scrapy_app/spiders/zwdt_policy_spider.py
-tests/test_crawler_cli.py
-tests/test_firecrawl_crawler.py

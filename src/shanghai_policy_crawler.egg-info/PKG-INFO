@@ -1,15 +1,20 @@
 Metadata-Version: 2.4
 Name: shanghai-policy-crawler
-Version: 0.1.0
+Version: 0.2.0
 Summary: Crawler for Shanghai government policy pages (shanghai.gov.cn / zwdt.sh.gov.cn).
 Requires-Python: >=3.10
-Requires-Dist: beautifulsoup4==4.12.3
-Requires-Dist: firecrawl-py>=1.0.0
+Requires-Dist: pydantic>=2.9.2
+Requires-Dist: requests>=2.31.0
+Requires-Dist: beautifulsoup4>=4.12.3
 Requires-Dist: openpyxl>=3.1.0
-Requires-Dist: orjson==3.10.7
-Requires-Dist: pydantic==2.9.2
-Requires-Dist: python-dotenv==1.0.1
-Requires-Dist: structlog==24.4.0
-Requires-Dist: tenacity==9.0.0
+Requires-Dist: orjson>=3.10.7
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: structlog>=24.4.0
+Requires-Dist: tenacity>=9.0.0
+Requires-Dist: crawl4ai>=0.9.1
+Requires-Dist: playwright>=1.49.0
+Requires-Dist: patchright>=1.61.2
+Requires-Dist: cnloc>=0.1.7
 Provides-Extra: dev
-Requires-Dist: pytest==8.3.3; extra == "dev"
+Requires-Dist: pytest>=8.3.3; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"

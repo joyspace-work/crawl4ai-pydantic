@@ -1,272 +1,341 @@
+"""
+crawl4ai_crawler.py — Browser-rendered page crawler using crawl4ai.
+
+Used ONLY when the REST API is unavailable (e.g., SPA pages that require JS rendering).
+Extracts structured data via CSS selectors + BeautifulSoup; no LLM calls.
+"""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-import json
-import asyncio
-import os
-import time
-import requests
-from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
-from pydantic import BaseModel, Field
+from bs4 import BeautifulSoup, Tag
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, LLMConfig
-from crawl4ai.extraction_strategy import LLMExtractionStrategy
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+
 from shanghai_policy_crawler.categories import infer_categories
 from shanghai_policy_crawler.utils import utc_now_iso
-from shanghai_policy_crawler.firecrawl_crawler import PolicyDetailSchema
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# CSS selector maps — tuples of (field_name, css_selector, attribute_or_None)
+# None attribute means use .get_text().strip()
+# ---------------------------------------------------------------------------
+LIST_ITEM_SELECTORS: list[str] = [
+    "ul.list-ul li a",
+    "ul.news-list li a",
+    ".policy-list a",
+    ".article-list a",
+    "table.list-table td a",
+    "li.list-item a",
+    ".content-list li a",
+]
+
+NEXT_PAGE_SELECTORS: list[str] = [
+    "a[rel='next']",
+    "a.next",
+    ".pagination .next",
+    ".pagination a.next-page",
+    "li.next a",
+    "a[aria-label='Next']",
+]
+
+# Field-level selectors for detail pages; first match wins.
+DETAIL_FIELD_SELECTORS: dict[str, list[str]] = {
+    "title": [
+        "h1.article-title",
+        "h1.policy-title",
+        "h1",
+        ".title",
+        "title",
+    ],
+    "publish_date": [
+        ".publish-date",
+        ".release-date",
+        ".date",
+        "span.time",
+        "time",
+        "meta[name='publish_date']",
+        "meta[property='article:published_time']",
+    ],
+    "source": [
+        ".source-org",
+        ".department",
+        ".agency",
+        ".origin",
+        "meta[name='author']",
+    ],
+    "document_number": [
+        ".doc-number",
+        ".document-no",
+        ".wen-hao",
+        ".file-number",
+    ],
+    "content": [
+        "article",
+        ".article-content",
+        ".policy-content",
+        ".content-area",
+        ".main-content",
+        "main",
+        "#main-content",
+    ],
+}
+
+
 class Crawl4AIPolicyCrawler:
+    """
+    Fallback crawler for pages that require browser rendering.
+    API-based crawlers (e.g. ShanghaiGovApiClient) should always be tried first.
+    """
+
     def __init__(
         self,
         city_filter: str = "上海市",
         min_year: int = 2024,
         keyword: str = "",
         cookie: Optional[str] = None,
-        llm_provider: str = "meta-llama/llama-3.3-70b-instruct:free",
-        llm_api_key: Optional[str] = None,
     ) -> None:
         self.city_filter = city_filter
         self.min_year = min_year
         self.keyword = keyword
-        self.cookie = cookie
         self.date_re = re.compile(r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})")
-        
-        # Load API keys
-        self.llm_api_key = (
-            llm_api_key 
-            or os.getenv("OPENROUTER_API_KEY") 
-            or os.getenv("OPENROUTER_KEY")
-            or os.getenv("OPENAI_API_KEY")
-        )
-        self.llm_provider = llm_provider
-        
-        # Configure Browser settings with best practices (headless, undetected-like headers)
+
         self.browser_config = BrowserConfig(
             headless=True,
             verbose=False,
-            headers={"Cookie": cookie} if cookie else None
+            headers={"Cookie": cookie} if cookie else None,
         )
 
-    def extract_links(self, list_url: str, list_item_selectors: Optional[List[str]] = None) -> Tuple[List[str], Optional[str]]:
-        """
-        Scrape a policy list page using AsyncWebCrawler.
-        """
+    # ------------------------------------------------------------------
+    # Public sync wrappers (crawlers.py calls these from sync context)
+    # ------------------------------------------------------------------
+
+    def extract_links(
+        self,
+        list_url: str,
+        list_item_selectors: Optional[list[str]] = None,
+    ) -> tuple[list[str], Optional[str]]:
         try:
-            return asyncio.run(self._extract_links_async(list_url, list_item_selectors))
-        except Exception as e:
-            logger.error("Crawl4AI failed to extract links from %s: %s", list_url, e)
+            return asyncio.run(
+                self._extract_links_async(list_url, list_item_selectors)
+            )
+        except Exception as exc:
+            logger.error("Crawl4AI failed to extract links from %s: %s", list_url, exc)
             return [], None
 
-    async def _extract_links_async(self, list_url: str, list_item_selectors: Optional[List[str]] = None) -> Tuple[List[str], Optional[str]]:
-        logger.info("Crawl4AI harvesting links from list page: %s", list_url)
-        next_page_url = None
-        
-        async with AsyncWebCrawler(config=self.browser_config) as crawler:
-            run_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
-            result = await crawler.arun(url=list_url, config=run_config)
-            
-            if not result.success:
-                logger.warning("Crawl4AI failed to load page: %s. Error: %s", list_url, result.error_message)
-                return [], None
-                
-            html = result.html or ""
-            if not html:
-                return [], None
-                
-            soup = BeautifulSoup(html, "html.parser")
-            links = []
-            
-            if list_item_selectors:
-                for selector in list_item_selectors:
-                    elements = soup.select(selector)
-                    for el in elements:
-                        href = el.get("href")
-                        if href:
-                            links.append(urljoin(list_url, href.strip()))
-            else:
-                for a in soup.find_all("a"):
-                    href = a.get("href")
-                    if href:
-                        links.append(urljoin(list_url, href.strip()))
-                        
-            unique_links = list(dict.fromkeys(links))
-            logger.info("Extracted %d links via Crawl4AI BeautifulSoup parsing", len(unique_links))
-            
-            # Find next page link in pagination
-            next_selectors = [
-                "a[rel='next']", "a.next", ".pagination .next",
-                ".pagination a.next-page", "li.next a",
-                "a[aria-label='Next']", "a[aria-label*='next']"
-            ]
-            for sel in next_selectors:
-                el = soup.select_one(sel)
-                if el and el.get("href"):
-                    next_page_url = urljoin(list_url, el.get("href").strip())
-                    break
-            
-            if not next_page_url:
-                for a in soup.find_all("a"):
-                    text = a.get_text() or ""
-                    if "下一页" in text or "Next" in text or "next" in text.lower():
-                        href = a.get("href")
-                        if href:
-                            next_page_url = urljoin(list_url, href.strip())
-                            break
-                            
-            return unique_links, next_page_url
-
     def extract_detail(self, detail_url: str) -> Optional[dict[str, Any]]:
-        """
-        Scrape a single detail page. Uses Crawl4AI to fetch markdown, and OpenRouter to extract details.
-        """
         try:
             return asyncio.run(self._extract_detail_async(detail_url))
-        except Exception as e:
-            logger.error("Crawl4AI failed to extract detail from %s: %s", detail_url, e)
+        except Exception as exc:
+            logger.error("Crawl4AI failed to extract detail from %s: %s", detail_url, exc)
             return None
 
-    async def _extract_detail_async(self, detail_url: str) -> Optional[dict[str, Any]]:
-        logger.info("Crawl4AI extracting detail from: %s", detail_url)
-        
-        # 1. Setup LLMExtractionStrategy if API Key is available
-        if not self.llm_api_key:
-            logger.warning("No LLM API Key provided. LLMExtractionStrategy requires an API key. Falling back to local/BS4 extraction.")
-            run_config = CrawlerRunConfig(
-                cache_mode=CacheMode.BYPASS,
-                delay_before_return_html=2.0
-            )
-        else:
-            llm_config = LLMConfig(
-                provider=self.llm_provider,
-                api_token=self.llm_api_key,
-                extra_args={
-                    "temperature": 0.1,
-                    "max_tokens": 4000
-                }
-            )
-            extraction_strategy = LLMExtractionStrategy(
-                llm_config=llm_config,
-                schema=PolicyDetailSchema.model_json_schema(),
-                extraction_type="schema",
-                instruction="""请根据网页内容，提取出该政策的所有字段，并严格以符合 schema 结构的 JSON 输出。
-特别注意：content 必须尽可能完整包含政策正文，publish_date 必须符合 YYYY-MM-DD 格式，若无发文日期则返回 null。""",
-                input_format="markdown",
-                apply_chunking=False
-            )
-            run_config = CrawlerRunConfig(
-                cache_mode=CacheMode.BYPASS,
-                delay_before_return_html=2.0,
-                extraction_strategy=extraction_strategy
-            )
-        
+    # ------------------------------------------------------------------
+    # Async implementation — list page
+    # ------------------------------------------------------------------
+
+    async def _extract_links_async(
+        self,
+        list_url: str,
+        extra_selectors: Optional[list[str]] = None,
+    ) -> tuple[list[str], Optional[str]]:
+        logger.info("Crawl4AI harvesting links from: %s", list_url)
+
         async with AsyncWebCrawler(config=self.browser_config) as crawler:
-            result = await crawler.arun(url=detail_url, config=run_config)
-            
-            if not result.success:
-                logger.warning("Crawl4AI failed to extract details from: %s. Error: %s", detail_url, result.error_message)
-                return None
-                
-            markdown = result.markdown or ""
-            html = result.html or ""
-            
-            data = {}
-            if self.llm_api_key and result.extracted_content:
-                try:
-                    parsed = json.loads(result.extracted_content)
-                    if isinstance(parsed, list) and len(parsed) > 0:
-                        data = parsed[0]
-                    elif isinstance(parsed, dict):
-                        data = parsed
-                except Exception as e:
-                    logger.error("Failed to parse extracted structured JSON: %s. Using regex parser fallback...", e)
-                
-            # 2. Defensive Fallback Parser (extract title, publish_date, etc., locally if LLM failed)
-            title = data.get("title") or ""
-            publish_date = data.get("publish_date") or ""
-            source = data.get("source") or ""
-            content = data.get("content") or ""
-            gov_url = data.get("government_original_url") or ""
-            
-            soup = BeautifulSoup(html, "html.parser")
-            
-            if not title:
-                # Find first H1 or title element or first line of markdown
-                h1_el = soup.find("h1")
-                title = h1_el.get_text().strip() if h1_el else ""
-                if not title:
-                    lines = [l.strip() for l in markdown.split("\n") if l.strip()]
-                    title = lines[0] if lines else "无标题"
-                    
-            if not content:
-                content = markdown or ""
-                
-            if not source:
-                # Find common source containers
-                source_el = soup.select_one(".source, .agency, .department")
-                if source_el:
-                    source = source_el.get_text().strip()
-                    
-            text_blob = f"{title}\n{source}\n{content}"
-            
-            # Apply city filter
-            if not self._passes_city_filter(text_blob, url=detail_url):
-                logger.info("Filtered by city (%s): %s", self.city_filter, detail_url)
-                return None
-                
-            # Apply min year filter
-            normalized_date = self._normalize_date(publish_date) or self._extract_date_from_text(text_blob)
-            if not self._passes_min_year(normalized_date, text_blob):
-                logger.info("Filtered by year (min_year=%d, found_date=%s): %s", self.min_year, normalized_date, detail_url)
-                return None
-                
-            # Apply keyword filter
-            if self.keyword and self.keyword not in text_blob:
-                logger.info("Filtered by keyword (%s): %s", self.keyword, detail_url)
-                return None
-                
-            # Infer categories
-            category_labels, category_values = infer_categories(text_blob)
-            crawled_at = utc_now_iso()
-            
-            record = {
-                "title": title.strip(),
-                "publish_date": normalized_date,
-                "source": source.strip(),
-                "government_original_url": gov_url.strip() if gov_url else "",
-                "content": content,
-                "url": detail_url,
-                "attachments": [],
-                "crawled_at": crawled_at,
-                "keyword": self.keyword,
-                
-                # Compatibility fields
-                "source_url": detail_url,
-                "content_text": content,
-                "content_markdown": content,
-                "scraped_at": crawled_at,
-                "city": self.city_filter,
-                "category_labels": category_labels,
-                "category_values": category_values,
-                "source_type": "crawl4ai",
-                "source_site": urlparse(detail_url).netloc,
-                
-                # LLM Extracted Fields
-                "policy_object": data.get("policy_object") or "见正文",
-                "policy_conditions": data.get("policy_conditions") or "见正文",
-                "payment_standard": data.get("payment_standard") or "见正文",
-                "contact_information": data.get("contact_information") or "见正文",
-                "application_period": data.get("application_period") or "未明确",
-                "payment_method": data.get("payment_method") or "奖励/补贴",
-                "document_number": data.get("document_number"),
-            }
-            return record
+            result = await crawler.arun(
+                url=list_url,
+                config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS),
+            )
+
+        if not result.success:
+            logger.warning("Crawl4AI failed: %s — %s", list_url, result.error_message)
+            return [], None
+
+        html = result.html or ""
+        if not html:
+            return [], None
+
+        soup = BeautifulSoup(html, "html.parser")
+        selectors = (extra_selectors or []) + LIST_ITEM_SELECTORS
+        links: list[str] = []
+
+        for selector in selectors:
+            elements = soup.select(selector)
+            for el in elements:
+                href = el.get("href")
+                if href:
+                    links.append(urljoin(list_url, str(href).strip()))
+            if links:
+                break  # first matching selector wins
+
+        # fallback: collect ALL anchors
+        if not links:
+            for a in soup.find_all("a", href=True):
+                links.append(urljoin(list_url, str(a["href"]).strip()))
+
+        unique_links = list(dict.fromkeys(links))
+        logger.info("Extracted %d links via Crawl4AI CSS selectors", len(unique_links))
+
+        # --- next page ---
+        next_page_url: Optional[str] = None
+        for sel in NEXT_PAGE_SELECTORS:
+            el = soup.select_one(sel)
+            if el and el.get("href"):
+                next_page_url = urljoin(list_url, str(el["href"]).strip())
+                break
+        if not next_page_url:
+            for a in soup.find_all("a", href=True):
+                text = a.get_text() or ""
+                if "下一页" in text or text.strip().lower() in ("next", ">"):
+                    next_page_url = urljoin(list_url, str(a["href"]).strip())
+                    break
+
+        return unique_links, next_page_url
+
+    # ------------------------------------------------------------------
+    # Async implementation — detail page (CSS selector only, no LLM)
+    # ------------------------------------------------------------------
+
+    async def _extract_detail_async(
+        self, detail_url: str
+    ) -> Optional[dict[str, Any]]:
+        logger.info("Crawl4AI extracting detail from: %s", detail_url)
+
+        async with AsyncWebCrawler(config=self.browser_config) as crawler:
+            result = await crawler.arun(
+                url=detail_url,
+                config=CrawlerRunConfig(
+                    cache_mode=CacheMode.BYPASS,
+                    delay_before_return_html=1.5,
+                ),
+            )
+
+        if not result.success:
+            logger.warning(
+                "Crawl4AI failed to load detail: %s — %s",
+                detail_url,
+                result.error_message,
+            )
+            return None
+
+        html = result.html or ""
+        markdown = result.markdown or ""
+
+        if not html:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        title = self._select_text(soup, DETAIL_FIELD_SELECTORS["title"]) or ""
+        if not title:
+            # fallback to first non-empty line of markdown
+            lines = [ln.strip() for ln in markdown.splitlines() if ln.strip()]
+            title = lines[0] if lines else "无标题"
+
+        publish_date_raw = self._select_meta_or_text(
+            soup, DETAIL_FIELD_SELECTORS["publish_date"]
+        )
+        publish_date = self._normalize_date(publish_date_raw)
+
+        source = self._select_meta_or_text(soup, DETAIL_FIELD_SELECTORS["source"]) or ""
+        document_number = self._select_text(soup, DETAIL_FIELD_SELECTORS["document_number"]) or ""
+
+        content_el = self._select_element(soup, DETAIL_FIELD_SELECTORS["content"])
+        content = content_el.get_text("\n", strip=True) if content_el else markdown
+
+        text_blob = f"{title}\n{source}\n{content}"
+
+        # --- filters ---
+        if not self._passes_city_filter(text_blob, url=detail_url):
+            logger.info("Filtered by city (%s): %s", self.city_filter, detail_url)
+            return None
+
+        if not publish_date:
+            publish_date = self._extract_date_from_text(text_blob)
+
+        if not self._passes_min_year(publish_date, text_blob):
+            logger.info(
+                "Filtered by year (min=%d, found=%s): %s",
+                self.min_year,
+                publish_date,
+                detail_url,
+            )
+            return None
+
+        if self.keyword and self.keyword not in text_blob:
+            logger.info("Filtered by keyword (%s): %s", self.keyword, detail_url)
+            return None
+
+        category_labels, category_values = infer_categories(text_blob)
+        crawled_at = utc_now_iso()
+
+        return {
+            "title": title.strip(),
+            "publish_date": publish_date,
+            "source": source.strip(),
+            "document_number": document_number.strip(),
+            "content": content,
+            "url": detail_url,
+            "source_url": detail_url,
+            "attachments": [],
+            "crawled_at": crawled_at,
+            "scraped_at": crawled_at,
+            "keyword": self.keyword,
+            "city": self.city_filter,
+            "category_labels": category_labels,
+            "category_values": category_values,
+            "source_type": "crawl4ai",
+            "source_site": urlparse(detail_url).netloc,
+            "government_original_url": "",
+        }
+
+    # ------------------------------------------------------------------
+    # CSS selector helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _select_element(soup: BeautifulSoup, selectors: list[str]) -> Optional[Tag]:
+        for sel in selectors:
+            el = soup.select_one(sel)
+            if el:
+                return el
+        return None
+
+    @staticmethod
+    def _select_text(soup: BeautifulSoup, selectors: list[str]) -> str:
+        for sel in selectors:
+            el = soup.select_one(sel)
+            if el:
+                text = el.get_text(strip=True)
+                if text:
+                    return text
+        return ""
+
+    @staticmethod
+    def _select_meta_or_text(soup: BeautifulSoup, selectors: list[str]) -> str:
+        """Handles both <meta> (content attr) and regular elements (text)."""
+        for sel in selectors:
+            el = soup.select_one(sel)
+            if el:
+                if el.name == "meta":
+                    val = el.get("content", "")
+                    if val:
+                        return str(val).strip()
+                else:
+                    text = el.get_text(strip=True)
+                    if text:
+                        return text
+        return ""
+
+    # ------------------------------------------------------------------
+    # Filter / normalise helpers
+    # ------------------------------------------------------------------
 
     def _passes_city_filter(self, text: str, url: str = "") -> bool:
         if not self.city_filter:
@@ -285,17 +354,15 @@ class Crawl4AIPolicyCrawler:
         match = re.search(r"\d{4}", publish_date or "")
         if match:
             return int(match.group(0)) >= self.min_year
-        years = [int(year) for year in re.findall(r"20\d{2}", text or "")]
+        years = [int(y) for y in re.findall(r"20\d{2}", text or "")]
         return bool(years) and max(years) >= self.min_year
 
     def _extract_date_from_text(self, text: str) -> str:
-        match = self.date_re.search(text or "")
-        if not match:
+        m = self.date_re.search(text or "")
+        if not m:
             return ""
-        year, month, day = match.groups()
+        year, month, day = m.groups()
         return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
     def _normalize_date(self, value: str) -> str:
-        if not value:
-            return ""
-        return self._extract_date_from_text(value)
+        return self._extract_date_from_text(value) if value else ""

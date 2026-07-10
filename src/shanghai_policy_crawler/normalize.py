@@ -1,50 +1,78 @@
-import pandas as pd
-import cnloc
+"""
+normalize.py — Region normalization using cnloc.
+
+Converts raw region strings (e.g. "上海市浦东新区", "临港新片区", "浙江省杭州市")
+into a canonical province/city[/district] format:
+  - 直辖市 (Beijing, Shanghai, Tianjin, Chongqing): "上海市/上海市" or "上海市/上海市/浦东新区"
+  - 普通省市: "浙江省/杭州市" or "浙江省/杭州市/西湖区"
+  - Unknown: "全国"
+"""
+from __future__ import annotations
+
 from typing import Optional
 
+import cnloc
+
+
+# Municipalities that are both province and city
+_DIRECT_CITIES = {"上海市", "北京市", "天津市", "重庆市"}
+
+# Quick overrides for known abbreviations / special zones
+_ALIASES: dict[str, str] = {
+    "临港": "上海市/上海市/浦东新区",
+    "临港新片区": "上海市/上海市/浦东新区",
+    "浦东": "上海市/上海市/浦东新区",
+    "全市": "上海市/上海市",
+    "本市": "上海市/上海市",
+    "沪": "上海市/上海市",
+}
+
+
 def normalize_region(region_text: Optional[str]) -> str:
+    """Return a canonical region string for *region_text*."""
     if not region_text or not isinstance(region_text, str):
         return "全国"
-        
+
     text = region_text.strip()
     if not text:
         return "全国"
-        
-    # 对特定的特区或简称进行预处理（如临港）
-    if "临港" in text:
-        return "上海市/上海市/浦东新区"
-        
+
+    # Fast-path: known aliases
+    for alias, canonical in _ALIASES.items():
+        if alias in text:
+            return canonical
+
     try:
-        # cnloc.getlocation 接受地址字符串并返回 DataFrame
         df = cnloc.getlocation(text)
-        if df.empty:
+        if df is None or len(df) == 0:
             return "全国"
-            
+
         row = df.iloc[0]
-        # 提取省、市、区
-        prov = row['province_name'] if not pd.isna(row['province_name']) else None
-        city = row['city_name'] if not pd.isna(row['city_name']) else None
-        area = row['county_name'] if not pd.isna(row['county_name']) else None
-        
+
+        def _get(col: str) -> Optional[str]:
+            val = row.get(col)
+            if val is None:
+                return None
+            val_str = str(val).strip()
+            return val_str if val_str and val_str.lower() != "nan" else None
+
+        prov = _get("province_name")
+        city = _get("city_name")
+        area = _get("county_name")
+
         if not prov:
             return "全国"
-            
-        # 处理直辖市
-        is_direct = prov in ["上海市", "北京市", "天津市", "重庆市"]
-        
-        if is_direct:
+
+        if prov in _DIRECT_CITIES:
             if area:
                 return f"{prov}/{prov}/{area}"
-            else:
-                return f"{prov}/{prov}"
+            return f"{prov}/{prov}"
         else:
-            if area:
+            if area and city:
                 return f"{prov}/{city}/{area}"
             elif city:
                 return f"{prov}/{city}"
-            else:
-                return prov
-                
+            return prov
+
     except Exception:
-        # 降级处理
         return "全国"

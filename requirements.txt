@@ -1,7 +1,6 @@
 pydantic>=2.9.2
 requests>=2.31.0
 beautifulsoup4>=4.12.3
-firecrawl-py>=1.0.0
 openpyxl>=3.1.0
 orjson>=3.10.7
 python-dotenv>=1.0.1
