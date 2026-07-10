@@ -10,3 +10,5 @@ tenacity==9.0.0
 crawl4ai>=0.9.1
 playwright>=1.49.0
 patchright>=1.61.2
+cpca>=0.5.5
+setuptools<70.0.0

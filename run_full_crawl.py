@@ -69,8 +69,8 @@ def decode_base64_html(val):
 
 from shanghai_policy_crawler.normalize import normalize_region as _normalize_region
 
-def normalize_region(region_text, collect_dept_name):
-    return _normalize_region(region_text, collect_dept_name)
+def normalize_region(region_text):
+    return _normalize_region(region_text)
 
 def format_date_with_timezone(date_str, default_time="08:00:00"):
     """Format a partial date string (e.g. 2026-05-20) into YYYY-MM-DD HH:mm:ss GMT+8"""
@@ -294,9 +294,8 @@ def crawl_projects(limit_pages=None):
                 title = detail_data.get("name") or p.get("name") or ""
                 
                 # Region (Normalized region formatting)
-                collect_dept_name = p.get("collectDepartmentName") or detail_data.get("handingDeptName") or ""
                 region_name = detail_data.get("regionName") or ""
-                region = normalize_region(region_name, collect_dept_name)
+                region = normalize_region(region_name)
                 
                 # Recipient (申报对象)
                 obj_type = detail_data.get("object") or p.get("objectType") or ""
