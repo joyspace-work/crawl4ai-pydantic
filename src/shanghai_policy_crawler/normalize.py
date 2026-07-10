@@ -1,5 +1,5 @@
 import pandas as pd
-import cpca
+import cnloc
 from typing import Optional
 
 def normalize_region(region_text: Optional[str]) -> str:
@@ -15,16 +15,16 @@ def normalize_region(region_text: Optional[str]) -> str:
         return "上海市/上海市/浦东新区"
         
     try:
-        # cpca.transform 接受一个列表，返回 DataFrame
-        df = cpca.transform([text])
+        # cnloc.getlocation 接受地址字符串并返回 DataFrame
+        df = cnloc.getlocation(text)
         if df.empty:
             return "全国"
             
         row = df.iloc[0]
-        # 提取省、市、区。cpca 返回的数据中，空值为 nan 或 None，可以通过 pd.isna 检测
-        prov = row['省'] if not pd.isna(row['省']) else None
-        city = row['市'] if not pd.isna(row['市']) else None
-        area = row['区'] if not pd.isna(row['区']) else None
+        # 提取省、市、区
+        prov = row['province_name'] if not pd.isna(row['province_name']) else None
+        city = row['city_name'] if not pd.isna(row['city_name']) else None
+        area = row['county_name'] if not pd.isna(row['county_name']) else None
         
         if not prov:
             return "全国"
