@@ -67,33 +67,10 @@ def decode_base64_html(val):
     except Exception:
         return str(val).strip()
 
+from shanghai_policy_crawler.normalize import normalize_region as _normalize_region
+
 def normalize_region(region_text, collect_dept_name):
-    combined = f"{region_text or ''} {collect_dept_name or ''}"
-    districts = [
-        ("闵行", "上海市/上海市/闵行区"),
-        ("浦东", "上海市/上海市/浦东新区"),
-        ("黄浦", "上海市/上海市/黄浦区"),
-        ("徐汇", "上海市/上海市/徐汇区"),
-        ("长宁", "上海市/上海市/长宁区"),
-        ("静安", "上海市/上海市/静安区"),
-        ("普陀", "上海市/上海市/普陀区"),
-        ("虹口", "上海市/上海市/虹口区"),
-        ("杨浦", "上海市/上海市/杨浦区"),
-        ("宝山", "上海市/上海市/宝山区"),
-        ("嘉定", "上海市/上海市/嘉定区"),
-        ("金山", "上海市/上海市/金山区"),
-        ("松江", "上海市/上海市/松江区"),
-        ("青浦", "上海市/上海市/青浦区"),
-        ("奉贤", "上海市/上海市/奉贤区"),
-        ("崇明", "上海市/上海市/崇明区"),
-        ("临港", "上海市/上海市/浦东新区"),
-    ]
-    for key, val in districts:
-        if key in combined:
-            return val
-    if "上海" in combined:
-        return "上海市/上海市"
-    return "全国"
+    return _normalize_region(region_text, collect_dept_name)
 
 def format_date_with_timezone(date_str, default_time="08:00:00"):
     """Format a partial date string (e.g. 2026-05-20) into YYYY-MM-DD HH:mm:ss GMT+8"""
