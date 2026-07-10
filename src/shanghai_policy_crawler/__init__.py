@@ -1,8 +1,18 @@
-"""Scrapy-first policy crawler package."""
+"""Shanghai policy crawler package."""
 
-def main() -> None:
-    from .crawler import main as _main
+from .models import ProjectItem, PolicyItem
+from .crawlers import crawl_projects, crawl_policies, link_projects_and_policies
+from .llm_utils import call_openrouter_llm, extract_policy_expire_date, extract_conditions_and_standards
+from .normalize import normalize_region
 
-    _main()
-
-__all__ = ["main"]
+__all__ = [
+    "ProjectItem",
+    "PolicyItem",
+    "crawl_projects",
+    "crawl_policies",
+    "link_projects_and_policies",
+    "call_openrouter_llm",
+    "extract_policy_expire_date",
+    "extract_conditions_and_standards",
+    "normalize_region",
+]
