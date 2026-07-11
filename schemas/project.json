@@ -9,10 +9,6 @@
       "title": "Project Id",
       "type": "string"
     },
-    "policy_id": {
-      "title": "Policy Id",
-      "type": "string"
-    },
     "policy_basis": {
       "title": "Policy Basis",
       "type": "string"
@@ -95,17 +91,11 @@
     "crawled_at": {
       "title": "Crawled At",
       "type": "string"
-    },
-    "raw_detail": {
-      "additionalProperties": true,
-      "title": "Raw Detail",
-      "type": "object"
     }
   },
   "required": [
     "url",
     "project_id",
-    "policy_id",
     "policy_basis",
     "title",
     "region",
@@ -118,8 +108,7 @@
     "material_text",
     "contact_information",
     "apply_method",
-    "crawled_at",
-    "raw_detail"
+    "crawled_at"
   ],
   "title": "ProjectItem",
   "type": "object"

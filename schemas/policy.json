@@ -78,11 +78,6 @@
       ],
       "default": null,
       "title": "Pdf Url"
-    },
-    "raw_detail": {
-      "additionalProperties": true,
-      "title": "Raw Detail",
-      "type": "object"
     }
   },
   "required": [
@@ -92,8 +87,7 @@
     "region",
     "document_number",
     "agency",
-    "content",
-    "raw_detail"
+    "content"
   ],
   "title": "PolicyItem",
   "type": "object"

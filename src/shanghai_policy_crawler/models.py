@@ -3,7 +3,7 @@ models.py — Pydantic data models for Shanghai policy crawling pipeline.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,7 +12,6 @@ class ProjectItem(BaseModel):
     """申报项目（上海市企业创新港政策申报项目）"""
     url: str
     project_id: str
-    policy_id: str
     policy_basis: str
     policy_ids: List[str] = Field(default_factory=list)
     title: str
@@ -29,7 +28,6 @@ class ProjectItem(BaseModel):
     contact_information: str
     apply_method: str
     crawled_at: str
-    raw_detail: Dict[str, Any]
 
 
 class PolicyItem(BaseModel):
@@ -45,4 +43,3 @@ class PolicyItem(BaseModel):
     expire_date: Optional[str] = None
     content: str
     pdf_url: Optional[str] = None
-    raw_detail: Dict[str, Any]

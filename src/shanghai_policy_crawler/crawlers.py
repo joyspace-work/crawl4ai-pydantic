@@ -235,6 +235,37 @@ def crawl_projects(
                 supp_text = decode_base64_html(detail.get("support"))
                 material_text = decode_base64_html(detail.get("material"))
 
+                # ── Try structured lists from API first to avoid LLM/regex fallbacks ──
+                if not cond_text or "未在页面结构化" in cond_text:
+                    cond_list = detail.get("conditionResolveList") or []
+                    if cond_list:
+                        cond_text = "\n".join(
+                            f"- {item.get('resolveTitle')}"
+                            for item in cond_list
+                            if item.get("resolveTitle")
+                        )
+                    else:
+                        exam_schema = detail.get("examinationForm", {}).get("schema") or []
+                        if exam_schema:
+                            cond_text = "\n".join(
+                                f"- {item.get('name')}"
+                                for item in exam_schema
+                                if item.get("name")
+                            )
+
+                if not material_text or "未在页面结构化" in material_text:
+                    mat_list = detail.get("materialResolveList") or []
+                    if mat_list:
+                        mat_items = []
+                        for item in mat_list:
+                            title_val = item.get("resolveTitle")
+                            if title_val:
+                                is_need = item.get("isNeed")
+                                suffix = " (必要)" if is_need == 1.0 else ""
+                                mat_items.append(f"- {title_val}{suffix}")
+                        if mat_items:
+                            material_text = "\n".join(mat_items)
+
                 # LLM fallback when structured fields are missing
                 if (not cond_text or "未在页面结构化" in cond_text) or \
                    (not supp_text or "未在页面结构化" in supp_text):
@@ -249,11 +280,18 @@ def crawl_projects(
 
                 collect_dept = detail.get("collectDeptName") or detail.get("agency") or ""
 
+                # Save raw detail to file
+                raw_dir = out_file.parent / "raw" / "projects"
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                with open(raw_dir / f"zwdt-{project_id}.json", "w", encoding="utf-8") as rf:
+                    json.dump(detail, rf, ensure_ascii=False, indent=2)
+
+                p_policy_id = f"zwdt-{detail.get('policyId')}" if detail.get("policyId") else ""
+
                 item = ProjectItem(
                     project_id=f"zwdt-{project_id}",
-                    policy_id=f"shgov-{detail.get('policyId')}" if detail.get("policyId") else "",
                     policy_basis=(detail.get("sourcePolicy") or {}).get("name") or "",
-                    policy_ids=[],
+                    policy_ids=[p_policy_id] if p_policy_id else [],
                     title=title,
                     region=region,
                     agency=collect_dept,
@@ -269,7 +307,6 @@ def crawl_projects(
                     contact_information=detail.get("phone") or "",
                     apply_method=detail.get("declareMethodDesc") or "",
                     crawled_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    raw_detail=detail,
                 )
                 fh.write(json.dumps(item.model_dump(), ensure_ascii=False) + "\n")
                 existing_ids.add(project_id)
@@ -371,18 +408,24 @@ def crawl_policies(
                      .replace("的通知", "").replace("通知", "")
             )
             for p in projects:
-                basis = p.get("policy_basis") or (p.get("raw_detail", {}).get("sourcePolicy") or {}).get("name") or ""
+                basis = p.get("policy_basis") or ""
                 project_title = p.get("title") or ""
                 project_id = p.get("project_id")
-                raw_policy_id = (p.get("raw_detail", {}).get("policyId") or "")
+                project_policy_ids = p.get("policy_ids") or []
 
                 matched = (
                     (basis and (title in basis or (len(clean_title) > 5 and clean_title in basis) or (doc_num and doc_num in basis)))
                     or (len(clean_title) > 8 and clean_title in project_title)
-                    or (raw_policy_id and raw_policy_id == rec["businessId"])
+                    or (rec["businessId"] and f"shgov-{rec['businessId']}" in project_policy_ids)
                 )
                 if matched and project_id and project_id not in matched_project_ids:
                     matched_project_ids.append(project_id)
+
+            # Save raw detail to file
+            raw_dir = out_file.parent / "raw" / "policies"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            with open(raw_dir / f"shgov-{rec['businessId']}.json", "w", encoding="utf-8") as rf:
+                json.dump(rec, rf, ensure_ascii=False, indent=2)
 
             item = PolicyItem(
                 policy_id=f"shgov-{rec['businessId']}",
@@ -396,7 +439,6 @@ def crawl_policies(
                 content=content,
                 pdf_url=rec["pdf_url"],
                 url=rec["detail_url"],
-                raw_detail=rec,
             )
             fh.write(json.dumps(item.model_dump(), ensure_ascii=False) + "\n")
             existing_ids.add(rec["businessId"])
@@ -451,11 +493,11 @@ def link_projects_and_policies(
         pol.setdefault("project_ids", [])
 
     for p in projects:
-        basis = p.get("policy_basis") or (p.get("raw_detail", {}).get("sourcePolicy") or {}).get("name") or ""
+        basis = p.get("policy_basis") or ""
         p["policy_basis"] = basis
         project_title = p.get("title") or ""
         project_id = p.get("project_id")
-        raw_detail_policy_id = (p.get("raw_detail", {}).get("policyId") or "")
+        project_policy_ids = p.get("policy_ids") or []
 
         for pol in policies:
             policy_id = pol.get("policy_id")
@@ -475,7 +517,7 @@ def link_projects_and_policies(
                     or (doc_num and doc_num in basis)
                 ))
                 or (len(clean_policy_title) > 8 and clean_policy_title in project_title)
-                or (raw_detail_policy_id and raw_detail_policy_id == raw_policy_id)
+                or (policy_id and policy_id in project_policy_ids)
             )
             if matched:
                 if policy_id and policy_id not in p["policy_ids"]:

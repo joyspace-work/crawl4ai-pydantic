@@ -35,6 +35,9 @@ def call_openrouter_llm(prompt: str) -> str:
     Retries up to _MAX_RETRIES times with linear back-off.
     Returns an empty string on persistent failure.
     """
+    if not OPENROUTER_KEY:
+        print("[LLM] Warning: OPENROUTER_API_KEY is not set. Skipping LLM call.")
+        return ""
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json",
@@ -65,10 +68,61 @@ def call_openrouter_llm(prompt: str) -> str:
 
 def extract_policy_expire_date(title: str, content: str) -> str | None:
     """
-    Ask the LLM to find the expiration / effective-end date in *content*.
+    Find the expiration / effective-end date in *content* using regex first.
+    Falls back to LLM if regex fails and OPENROUTER_KEY is configured.
 
     Returns a 'YYYY-MM-DD' string, or None if not found.
     """
+    if not content:
+        return None
+
+    # 1. Regex Pattern 1: 有效期至YYYY年MM月DD日
+    m1 = re.search(r"有效期至\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", content)
+    if m1:
+        return f"{m1.group(1)}-{int(m1.group(2)):02d}-{int(m1.group(3)):02d}"
+
+    # 2. Regex Pattern 2: 自YYYY年MM月DD日起施行，有效期至YYYY年MM月DD日
+    m2 = re.search(r"施行.*?有效期至\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", content, re.DOTALL)
+    if m2:
+        return f"{m2.group(1)}-{int(m2.group(2)):02d}-{int(m2.group(3)):02d}"
+
+    # 3. Regex Pattern 3: 自YYYY年MM月DD日起施行，有效期为X年
+    m_start = re.search(r"自\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日起?\s*(?:施行|起?执行)", content)
+    m_span = re.search(r"有效期\s*(?:为|共)?\s*(\d{1,2})\s*年", content)
+    if m_start and m_span:
+        try:
+            start_year = int(m_start.group(1))
+            start_month = int(m_start.group(2))
+            start_day = int(m_start.group(3))
+            span_years = int(m_span.group(1))
+            expire_year = start_year + span_years
+            return f"{expire_year}-{start_month:02d}-{start_day:02d}"
+        except Exception:
+            pass
+
+    # 4. Regex Pattern 4: 自...起算，有效期为X年
+    m_start = re.search(r"自\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日起", content)
+    m_span2 = re.search(r"期满\s*(\d{1,2})\s*年", content)
+    if m_start and m_span2:
+        try:
+            start_year = int(m_start.group(1))
+            start_month = int(m_start.group(2))
+            start_day = int(m_start.group(3))
+            span_years = int(m_span2.group(1))
+            expire_year = start_year + span_years
+            return f"{expire_year}-{start_month:02d}-{start_day:02d}"
+        except Exception:
+            pass
+
+    # Fallback to LLM if key is set
+    # Guard against LLM fallback if there are no signs of validity limits
+    has_validity_indicator = any(x in content for x in ["有效期", "期满", "有效期限", "截止"])
+    if not has_validity_indicator:
+        return None
+
+    if not OPENROUTER_KEY:
+        return None
+
     prompt = f"""你是一个专业的政策文本分析助手。请阅读以下政策文件，找出它的失效日期/废止日期/有效期截止日期。
 政策标题: {title}
 政策正文片段:
@@ -87,10 +141,35 @@ def extract_policy_expire_date(title: str, content: str) -> str | None:
 
 def extract_conditions_and_standards(title: str, raw_text: str) -> tuple[str, str]:
     """
-    Ask the LLM to extract 'policy_conditions' and 'payment_standard' from *raw_text*.
+    Extract 'policy_conditions' and 'payment_standard' from *raw_text* using regex first.
+    Falls back to LLM if regex fails and OPENROUTER_KEY is configured.
 
     Returns a (conditions, standard) tuple; either element may be an empty string.
     """
+    if not raw_text or ("未在页面结构化" in raw_text and len(raw_text.strip()) < 150):
+        return "", ""
+
+    # Parse using regex headers in raw_text
+    cond_match = re.search(r"申报条件:\s*(.*?)(?=\n\n兑付标准:|\n\n申报材料:|$)", raw_text, re.DOTALL)
+    supp_match = re.search(r"兑付标准:\s*(.*?)(?=\n\n申报材料:|$)", raw_text, re.DOTALL)
+
+    cond = cond_match.group(1).strip() if cond_match else ""
+    supp = supp_match.group(1).strip() if supp_match else ""
+
+    # Clear placeholders
+    if "未在页面结构化" in cond:
+        cond = ""
+    if "未在页面结构化" in supp:
+        supp = ""
+
+    # If we got both extracted cleanly via regex, return immediately
+    if cond or supp:
+        return cond, supp
+
+    # Fallback to LLM if key is set
+    if not OPENROUTER_KEY:
+        return "", ""
+
     truncated = (raw_text or "")[:10000]
     prompt = f"""你是一个专业的政策申报数据提取助手。请根据以下项目名称和正文内容，提取出该项目的"申报条件"和"兑付标准/支持标准"。
 项目名称: {title}
@@ -117,15 +196,15 @@ def extract_conditions_and_standards(title: str, raw_text: str) -> tuple[str, st
         parsed = json.loads(raw)
         return parsed.get("policy_conditions", ""), parsed.get("payment_standard", "")
     except Exception:
-        cond = _regex_extract(raw, "policy_conditions")
-        std = _regex_extract(raw, "payment_standard")
-        if cond or std:
+        cond_val = _regex_extract(raw, "policy_conditions")
+        std_val = _regex_extract(raw, "payment_standard")
+        if cond_val or std_val:
             print(f"[LLM] Partial extraction via regex fallback for: {title}")
         else:
             print(f"[LLM] Failed to parse JSON output: {raw[:300]}")
         return (
-            cond.replace("\\n", "\n").replace('\\"', '"'),
-            std.replace("\\n", "\n").replace('\\"', '"'),
+            cond_val.replace("\\n", "\n").replace('\\"', '"'),
+            std_val.replace("\\n", "\n").replace('\\"', '"'),
         )
 
 
